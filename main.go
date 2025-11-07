@@ -325,7 +325,7 @@ func main() {
         c.JSON(200, gin.H{"status": "API running"})
     })
 
-    port := os.Getenv("PORT")
+    port = os.Getenv("PORT")
     if port == "" {
         port = "8080"
     }
