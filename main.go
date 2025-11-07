@@ -200,13 +200,20 @@ func main() {
     if err := godotenv.Load(); err != nil {
         log.Println("⚠️  No .env file found — assuming production environment")
     }
+    host := mustGetEnv("POSTGRES_HOST")
+    user := mustGetEnv("POSTGRES_USER")
+    password := mustGetEnv("POSTGRES_PASSWORD")
+    dbname := mustGetEnv("POSTGRES_DB")
+    port := mustGetEnv("POSTGRES_PORT")
+
+    sslmode := "require"
+    if host == "localhost" || host == "127.0.0.1" {
+        sslmode = "disable"
+    }
+
     connStr := fmt.Sprintf(
-        "host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-        mustGetEnv("POSTGRES_HOST"),
-        mustGetEnv("POSTGRES_USER"),
-        mustGetEnv("POSTGRES_PASSWORD"),
-        mustGetEnv("POSTGRES_DB"),
-        mustGetEnv("POSTGRES_PORT"),
+        "host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+        host, user, password, dbname, port, sslmode,
     )
 
     var err error
