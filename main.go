@@ -206,8 +206,8 @@ func main() {
     dbname := mustGetEnv("POSTGRES_DB")
     port := mustGetEnv("POSTGRES_PORT")
 
-    sslmode := "require"
-    if host == "localhost" || host == "127.0.0.1" {
+    sslmode := "disable"
+    if host == "localhost" || host == "127.0.0.1" || host == "shortage2_db" {
         sslmode = "disable"
     }
 
@@ -234,7 +234,7 @@ func main() {
     router := gin.Default()
     router.RedirectTrailingSlash = true
     config := cors.Config{
-        AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001"},
+        AllowOrigins:     []string{"http://178.18.249.69:3000", "http://localhost:3000", "http://localhost:3001"},
         AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-User-Role"},
         ExposeHeaders:    []string{"Content-Length"},
