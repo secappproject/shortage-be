@@ -707,7 +707,6 @@ func getBoms(c *gin.Context) {
     boms := make([]BOM, 0)
     for rows.Next() {
         var b BOM
-        // Scan diubah
         if err := rows.Scan(&b.ID, &b.BomCode, &b.VersionTag, &b.PartReference, &b.Material, &b.MaterialDescription, &b.Qty, &b.CreatedAt, &b.UpdatedAt); err != nil {
             log.Printf("Error scanning BOM: %v", err)
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memindai data BOM"})
@@ -1123,76 +1122,105 @@ func getProjectTracking(c *gin.Context) {
 }
 
 func createProjectTracking(c *gin.Context) {
-    var p ProjectTrackingPayload
-    if err := c.ShouldBindJSON(&p); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Input tidak valid: " + err.Error()})
-        return
-    }
+	var p ProjectTrackingPayload
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Input tidak valid: " + err.Error()})
+		return
+	}
 
-    if p.ActualParts == nil {
-        p.ActualParts = []ActualPart{}
-    }
+	if p.ActualParts == nil {
+		p.ActualParts = []ActualPart{}
+	}
 
-    tx, err := db.Begin()
-    if err != nil {
-        log.Printf("Error starting transaction: %v", err)
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memulai transaksi"})
-        return
-    }
+	tx, err := db.Begin()
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memulai transaksi"})
+		return
+	}
 
-    var newTrackingID int
-    err = tx.QueryRow(
-        `INSERT INTO project_tracking (
+	if !p.ProjectID.Valid && p.NewProjectName.Valid && p.NewProjectName.String != "" && p.NewWbsNumber.Valid && p.NewWbsNumber.String != "" {
+		var newProjectID int64
+		err := tx.QueryRow(
+			`INSERT INTO projects (project_name, wbs_number)
+			 VALUES ($1, $2)
+			 RETURNING id`,
+			p.NewProjectName.String, p.NewWbsNumber.String,
+		).Scan(&newProjectID)
+
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Error creating new project during tracking creation: %v", err)
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+				c.JSON(http.StatusConflict, gin.H{"error": "Gagal membuat project baru: Nama Project atau WBS Number sudah ada."})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat project baru: " + err.Error()})
+			return
+		}
+
+		p.ProjectID = sql.NullInt64{Int64: newProjectID, Valid: true}
+
+	} else if !p.ProjectID.Valid && (p.NewProjectName.Valid || p.NewWbsNumber.Valid) {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Untuk project baru, Nama Project dan WBS Number wajib diisi."})
+		return
+	}
+
+	var newTrackingID int
+	err = tx.QueryRow(
+		`INSERT INTO project_tracking (
             project_id, switchboard_name, compartment_number, mech_assembly_by, 
             wiring_type, wiring_by, status_test, tested_by, date_tested
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
-        p.ProjectID, p.SwitchboardName, p.CompartmentNumber, p.MechAssemblyBy,
-        p.WiringType, p.WiringBy, p.StatusTest, p.TestedBy, p.DateTested,
-    ).Scan(&newTrackingID)
+		p.ProjectID, 
+		p.SwitchboardName, p.CompartmentNumber, p.MechAssemblyBy,
+		p.WiringType, p.WiringBy, p.StatusTest, p.TestedBy, p.DateTested,
+	).Scan(&newTrackingID)
 
-    if err != nil {
-        tx.Rollback()
-        log.Printf("Error creating tracking (step 1): %v", err)
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tracking: " + err.Error()})
-        return
-    }
+	if err != nil {
+		tx.Rollback()
+		log.Printf("Error creating tracking (step 1): %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tracking: " + err.Error()})
+		return
+	}
 
-    if len(p.ActualParts) > 0 {
-        stmt, err := tx.Prepare(`INSERT INTO actual_parts (tracking_id, material, actual_qty, views) VALUES ($1, $2, $3, $4)`)
-        if err != nil {
-            tx.Rollback()
-            log.Printf("Error preparing statement (step 2): %v", err)
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyiapkan insert parts"})
-            return
-        }
-        defer stmt.Close()
+	if len(p.ActualParts) > 0 {
+		stmt, err := tx.Prepare(`INSERT INTO actual_parts (tracking_id, material, actual_qty, views) VALUES ($1, $2, $3, $4)`)
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Error preparing statement (step 2): %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyiapkan insert parts"})
+			return
+		}
+		defer stmt.Close()
 
-        for _, part := range p.ActualParts {
-            viewsJSON, err := json.Marshal(part.Views)
-            if err != nil {
-                tx.Rollback()
-                log.Printf("Error marshalling views for part '%s': %v", part.Material, err)
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses data views"})
-                return
-            }
+		for _, part := range p.ActualParts {
+			viewsJSON, err := json.Marshal(part.Views)
+			if err != nil {
+				tx.Rollback()
+				log.Printf("Error marshalling views for part '%s': %v", part.Material, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses data views"})
+				return
+			}
 
-            if _, err := stmt.Exec(newTrackingID, part.Material, part.Qty, viewsJSON); err != nil {
-                tx.Rollback()
-                log.Printf("Error inserting part '%s': %v", part.Material, err)
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan actual part: " + err.Error()})
-                return
-            }
-        }
-    }
+			if _, err := stmt.Exec(newTrackingID, part.Material, part.Qty, viewsJSON); err != nil {
+				tx.Rollback()
+				log.Printf("Error inserting part '%s': %v", part.Material, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan actual part: " + err.Error()})
+				return
+			}
+		}
+	}
 
-    if err := tx.Commit(); err != nil {
-        log.Printf("Error committing transaction: %v", err)
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyelesaikan transaksi"})
-        return
-    }
+	if err := tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyelesaikan transaksi"})
+		return
+	}
 
-    c.JSON(http.StatusCreated, gin.H{"message": "Tracking berhasil dibuat", "id": newTrackingID})
+	c.JSON(http.StatusCreated, gin.H{"message": "Tracking berhasil dibuat", "id": newTrackingID})
 }
 
 func updateProjectTracking(c *gin.Context) {
