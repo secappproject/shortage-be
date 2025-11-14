@@ -104,17 +104,19 @@ type ActualPart struct {
 }
 
 type ProjectTrackingPayload struct {
-    ID                int            `json:"id"`
-    ProjectID         sql.NullInt64  `json:"projectId"`
-    SwitchboardName   string         `json:"switchboardName" binding:"required"`
-    CompartmentNumber string         `json:"compartmentNumber" binding:"required"`
-    MechAssemblyBy    sql.NullString `json:"mechAssemblyBy"`
-    WiringType        sql.NullString `json:"wiringType"`
-    WiringBy          sql.NullString `json:"wiringBy"`
-    StatusTest        string         `json:"statusTest" binding:"required"`
-    TestedBy          sql.NullString `json:"testedBy"`
-    DateTested        sql.NullTime   `json:"dateTested"`
-    ActualParts       []ActualPart   `json:"actualParts"`
+	ID                int            `json:"id"`
+	ProjectID         sql.NullInt64  `json:"projectId"`
+	NewProjectName    sql.NullString `json:"newProjectName"` 
+	NewWbsNumber      sql.NullString `json:"newWbsNumber"`  
+	SwitchboardName   string         `json:"switchboardName" binding:"required"`
+	CompartmentNumber string         `json:"compartmentNumber" binding:"required"`
+	MechAssemblyBy    sql.NullString `json:"mechAssemblyBy"`
+	WiringType        sql.NullString `json:"wiringType"`
+	WiringBy          sql.NullString `json:"wiringBy"`
+	StatusTest        string         `json:"statusTest" binding:"required"`
+	TestedBy          sql.NullString `json:"testedBy"`
+	DateTested        sql.NullTime   `json:"dateTested"`
+	ActualParts       []ActualPart   `json:"actualParts"`
 }
 
 type ProjectTrackingView struct {
