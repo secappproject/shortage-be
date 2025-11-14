@@ -1145,10 +1145,10 @@ func createProjectTracking(c *gin.Context) {
 	if !p.ProjectID.Valid && p.NewProjectName.Valid && p.NewProjectName.String != "" && p.NewWbsNumber.Valid && p.NewWbsNumber.String != "" {
 		var newProjectID int64
 		err := tx.QueryRow(
-			`INSERT INTO projects (project_name, wbs_number)
-			 VALUES ($1, $2)
+			`INSERT INTO projects (project_name, wbs_number, vendor_name)
+			 VALUES ($1, $2, $3)
 			 RETURNING id`,
-			p.NewProjectName.String, p.NewWbsNumber.String,
+			p.NewProjectName.String, p.NewWbsNumber.String, sql.NullString{}, 
 		).Scan(&newProjectID)
 
 		if err != nil {
@@ -1156,6 +1156,11 @@ func createProjectTracking(c *gin.Context) {
 			log.Printf("Error creating new project during tracking creation: %v", err)
 			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
 				c.JSON(http.StatusConflict, gin.H{"error": "Gagal membuat project baru: Nama Project atau WBS Number sudah ada."})
+				return
+			}
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23502" { 
+				log.Printf("NOT NULL violation: %v", pqErr.Message)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat project baru: Kolom di tabel project ada yang not-null."})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat project baru: " + err.Error()})
